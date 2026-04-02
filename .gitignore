@@ -1,0 +1,9 @@
+.DS_Store
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.build/
+*.xcscmblueprint
+Secrets.xcconfig
+Presence/Presence/Secrets.plist
+.cursor/
