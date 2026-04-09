@@ -6,6 +6,7 @@ final class NowPlayingStore {
   var title: String = "—"
   var artist: String = "—"
   var artworkURL: String = ""
+  var isPaused: Bool = false
   var onTrackChanged: ((String, String, String) -> Void)?
 
   nonisolated(unsafe) private var observer: NSObjectProtocol?
@@ -42,10 +43,16 @@ final class NowPlayingStore {
     let t: String
     let a: String
     if state == "Playing" {
+      isPaused = false
       t = (info?["Name"] as? String) ?? "—"
       a = (info?["Artist"] as? String) ?? "—"
+    } else if state == "Paused" {
+      // Keep existing track info — just mark as paused
+      isPaused = true
+      return
     } else {
-      // Paused or stopped — clear the display
+      // Stopped (Music app closed) — clear everything
+      isPaused = false
       t = "—"
       a = "—"
     }

@@ -29,28 +29,31 @@ struct ContentView: View {
           tuneInBusy = false
         }
       }
+      .opacity(nowPlaying.isPaused ? 0.6 : 1.0)
+      .animation(.easeInOut(duration: 0.3), value: nowPlaying.isPaused)
 
       Divider()
 
       // — Peer's track —
       if realtime.peerOnline {
         HStack(alignment: .firstTextBaseline) {
-          Text(realtime.peerDisplayName.isEmpty ? "Friend" : realtime.peerDisplayName)
-            .font(.headline)
-          Spacer()
           if !realtime.peerImessageContact.isEmpty {
             Button {
-              if let url = URL(string: "imessage:\(realtime.peerImessageContact)") {
+              if let url = URL(string: "sms://open?addresses=\(realtime.peerImessageContact)") {
                 NSWorkspace.shared.open(url)
               }
             } label: {
-              Label(realtime.peerImessageContact, systemImage: "message.fill")
-                .font(.caption)
-                .lineLimit(1)
+              Text(realtime.peerDisplayName.isEmpty ? "Friend" : realtime.peerDisplayName)
+                .font(.headline)
+                .foregroundStyle(.blue)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.blue)
+            .help("Message \(realtime.peerDisplayName)")
+          } else {
+            Text(realtime.peerDisplayName.isEmpty ? "Friend" : realtime.peerDisplayName)
+              .font(.headline)
           }
+          Spacer()
         }
         TrackRow(
           title: realtime.peerTitle.isEmpty ? "—" : realtime.peerTitle,
@@ -138,7 +141,7 @@ struct TrackRow: View {
     }
     .contentShape(Rectangle())
     .onTapGesture(perform: onTap)
-    .help("Click to open in Apple Music")
+    .help("Click to tune in")
   }
 
   private var artworkPlaceholder: some View {

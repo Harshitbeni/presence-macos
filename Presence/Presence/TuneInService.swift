@@ -14,7 +14,6 @@ enum TuneInService {
     guard let (data, _) = try? await URLSession.shared.data(from: searchURL) else {
       return "Network error"
     }
-
     guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let results = json["results"] as? [[String: Any]],
           let first = results.first,
@@ -22,7 +21,15 @@ enum TuneInService {
           let musicURL = URL(string: trackViewUrl)
     else { return "No catalog match" }
 
-    if NSWorkspace.shared.open(musicURL) { return nil }
-    return "Could not open Music"
+    // Open without activating Music.app so it stays in the background
+    let config = NSWorkspace.OpenConfiguration()
+    config.activates = false
+    NSWorkspace.shared.open(musicURL, configuration: config) { _, _ in }
+    return nil
   }
 }
+
+// ARCHIVE — original implementation (opened Music in foreground)
+//
+// if NSWorkspace.shared.open(musicURL) { return nil }
+// return "Could not open Music"
