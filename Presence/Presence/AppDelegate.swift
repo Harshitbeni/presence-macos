@@ -89,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       let view = ContentView(nowPlaying: nowPlaying, realtime: presenceRealtime, profile: profile)
       let host = NSHostingController<ContentView>(rootView: view)
       let p = NSPanel(
-        contentRect: NSRect(x: 0, y: 0, width: 320, height: 440),
+        contentRect: NSRect(x: 0, y: 0, width: 380, height: 420),
         styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
         backing: .buffered,
         defer: false
@@ -100,6 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       p.isMovable = false
       p.hidesOnDeactivate = false
       p.hasShadow = true
+      p.isOpaque = false
+      p.backgroundColor = .clear
       p.contentViewController = host
       panel = p
     }

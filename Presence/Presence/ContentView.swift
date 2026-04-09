@@ -51,10 +51,10 @@ struct PeerAvatarView: View {
   let name: String
   let state: PeerState
 
-  private let avatarSize: CGFloat = 48
+  private let avatarSize: CGFloat = 58
   private let dotSize: CGFloat = 16
-  private let badgeSize: CGFloat = 24
-  private let ringWidth: CGFloat = 2
+  private let badgeSize: CGFloat = 26
+  private let ringWidth: CGFloat = 2.5
 
   var body: some View {
     ZStack {
@@ -70,12 +70,18 @@ struct PeerAvatarView: View {
     .grayscale(state == .offline ? 1.0 : 0.0)
     .opacity(state == .offline ? 0.6 : 1.0)
     .animation(.easeInOut(duration: 0.3), value: state == .offline)
-    // Red connected ring
+    // Solid and dashed ring treatments for active friend states.
     .overlay {
+      if case .playing = state {
+        Circle()
+          .strokeBorder(Color.red.opacity(0.85), lineWidth: ringWidth)
+          .frame(width: avatarSize + 6, height: avatarSize + 6)
+      }
       if case .connected = state {
         Circle()
-          .strokeBorder(Color.red, lineWidth: ringWidth)
-          .frame(width: avatarSize, height: avatarSize)
+          .strokeBorder(style: StrokeStyle(lineWidth: ringWidth, dash: [6, 6]))
+          .foregroundStyle(Color.red.opacity(0.85))
+          .frame(width: avatarSize + 12, height: avatarSize + 12)
       }
     }
     // Badge in bottom-right corner
@@ -134,164 +140,162 @@ struct PeerAvatarView: View {
 // MARK: - Content View
 
 struct ContentView: View {
+  @Environment(\.colorScheme) private var colorScheme
   @Bindable var nowPlaying: NowPlayingStore
   @Bindable var realtime: PresenceRealtime
   @Bindable var profile: UserProfile
   @State private var tuneInMessage: String?
   @State private var tuneInBusy = false
-  @State private var isTunedIn = false
+  @State private var tunedInPeerId: String?
 
-  var peerState: PeerState {
-    guard realtime.peerOnline else { return .offline }
-    let hasArtwork = !realtime.peerArtworkURL.isEmpty
-    if hasArtwork && isTunedIn { return .connected(artworkURL: realtime.peerArtworkURL) }
-    if hasArtwork { return .playing(artworkURL: realtime.peerArtworkURL) }
-    return .online
-  }
+  private let friendColumns = Array(repeating: GridItem(.flexible(), spacing: 14), count: 5)
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      // — Your track —
-      Text(profile.displayName)
-        .font(.headline)
-      TrackRow(
-        title: nowPlaying.title,
-        artist: nowPlaying.artist,
-        artworkURL: nowPlaying.artworkURL
-      ) {
-        guard !tuneInBusy, nowPlaying.title != "—" else { return }
-        tuneInBusy = true
-        tuneInMessage = nil
-        Task {
-          tuneInMessage = await TuneInService.tuneIn(
-            peerTitle: nowPlaying.title,
-            peerArtist: nowPlaying.artist
+    ZStack {
+      VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+      RoundedRectangle(cornerRadius: 24, style: .continuous)
+        .fill(panelTint)
+
+      VStack(alignment: .leading, spacing: 18) {
+        header
+
+        if realtime.isStreamingEnabled {
+          Group {
+            if realtime.friends.isEmpty {
+              EmptyFriendsState()
+            } else {
+              LazyVGrid(columns: friendColumns, alignment: .leading, spacing: 14) {
+                ForEach(realtime.friends, id: \.userId) { friend in
+                  PeerAvatarView(name: displayName(for: friend), state: peerState(for: friend))
+                    .help(displayName(for: friend))
+                    .onTapGesture {
+                      tuneInToFriend(friend)
+                    }
+                }
+              }
+            }
+          }
+          .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+
+        Rectangle()
+          .fill(Color.primary.opacity(0.12))
+          .frame(height: 1)
+
+        VStack(alignment: .leading, spacing: 10) {
+          NowPlayingRow(
+            title: nowPlaying.title,
+            artist: nowPlaying.artist,
+            artworkURL: nowPlaying.artworkURL
           )
-          tuneInBusy = false
+          .opacity(nowPlaying.isPaused ? 0.6 : 1.0)
+          .animation(.easeInOut(duration: 0.3), value: nowPlaying.isPaused)
+
+          if let tuneInMessage {
+            Text(tuneInMessage)
+              .font(.caption)
+              .foregroundStyle(
+                tuneInMessage.contains("denied") || tuneInMessage.contains("No ") ? .red : .secondary
+              )
+          }
         }
       }
-      .opacity(nowPlaying.isPaused ? 0.6 : 1.0)
-      .animation(.easeInOut(duration: 0.3), value: nowPlaying.isPaused)
-
-      Divider()
-
-      // — Peer section —
-      peerRow
-
-      Text("Realtime: \(realtime.connectionState)")
-        .font(.caption)
-        .foregroundStyle(.tertiary)
-
-      if let err = realtime.lastError {
-        ScrollView {
-          Text(err)
-            .font(.caption)
-            .foregroundStyle(.red)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .textSelection(.enabled)
-        }
-        .frame(maxHeight: 180)
-      }
-
-      if let tuneInMessage {
-        Text(tuneInMessage)
-          .font(.caption)
-          .foregroundStyle(
-            tuneInMessage.contains("denied") || tuneInMessage.contains("No ") ? .red : .primary
-          )
-      }
-
-      Spacer(minLength: 8)
-
-      Button("Quit Presence") {
-        NSApp.stop(nil)
-      }
-      .keyboardShortcut("q", modifiers: .command)
+      .padding(22)
+      .frame(width: 380, alignment: .topLeading)
     }
-    .padding(16)
-    .frame(width: 300, height: 400, alignment: .topLeading)
-    .onChange(of: realtime.peerOnline) { _, online in
-      if !online { isTunedIn = false }
+    .overlay(
+      RoundedRectangle(cornerRadius: 24, style: .continuous)
+        .strokeBorder(Color.primary.opacity(0.2), lineWidth: 1)
+    )
+    .animation(.easeInOut(duration: 0.2), value: realtime.isStreamingEnabled)
+    .onChange(of: realtime.friends.map(\.userId)) { _, ids in
+      if let tunedInPeerId, !ids.contains(tunedInPeerId) {
+        self.tunedInPeerId = nil
+      }
     }
   }
 
-  @ViewBuilder
-  private var peerRow: some View {
-    let peerName = realtime.peerDisplayName.isEmpty ? "Friend" : realtime.peerDisplayName
-
-    HStack(alignment: .center, spacing: 10) {
-      PeerAvatarView(name: peerName, state: peerState)
-        .onTapGesture {
-          guard case .playing = peerState else { return }
-          guard !tuneInBusy else { return }
-          tuneInBusy = true
-          tuneInMessage = nil
-          Task {
-            let result = await TuneInService.tuneIn(
-              peerTitle: realtime.peerTitle,
-              peerArtist: realtime.peerArtist
-            )
-            tuneInMessage = result
-            tuneInBusy = false
-            if result == nil { isTunedIn = true }
-          }
-        }
-
-      VStack(alignment: .leading, spacing: 2) {
-        // Name — tappable as iMessage link if contact exists
-        if !realtime.peerImessageContact.isEmpty && realtime.peerOnline {
-          Button {
-            if let url = URL(string: "sms://open?addresses=\(realtime.peerImessageContact)") {
-              NSWorkspace.shared.open(url)
-            }
-          } label: {
-            Text(peerName)
-              .font(.headline)
-              .foregroundStyle(.blue)
-          }
-          .buttonStyle(.plain)
-          .help("Message \(peerName)")
-        } else {
-          Text(peerName)
-            .font(.headline)
-            .foregroundStyle(realtime.peerOnline ? .primary : .secondary)
-        }
-
-        // Song info
-        if realtime.peerOnline && !realtime.peerTitle.isEmpty {
-          Text(realtime.peerTitle)
-            .font(.subheadline)
-            .lineLimit(1)
-          Text(realtime.peerArtist)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-        } else if !realtime.peerOnline {
-          Text("Offline")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        } else {
-          Text("Online")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-      }
+  private var header: some View {
+    HStack {
+      Text("Beta Testers")
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+          Capsule(style: .continuous)
+            .fill(Color.primary.opacity(0.08))
+        )
 
       Spacer()
+
+      Toggle("", isOn: streamingBinding)
+        .toggleStyle(.switch)
+        .labelsHidden()
+        .help("Pause/Resume Presence streaming")
     }
+  }
+
+  private var streamingBinding: Binding<Bool> {
+    Binding(
+      get: { realtime.isStreamingEnabled },
+      set: { enabled in
+        Task { await realtime.setStreamingEnabled(enabled) }
+      }
+    )
+  }
+
+  private func displayName(for friend: PresencePayload) -> String {
+    friend.displayName.isEmpty ? "Friend" : friend.displayName
+  }
+
+  private func peerState(for friend: PresencePayload) -> PeerState {
+    let hasTrack = !friend.title.trimmingCharacters(in: .whitespaces).isEmpty && friend.title != "—"
+    if !hasTrack { return .online }
+    if tunedInPeerId == friend.userId {
+      return .connected(artworkURL: friend.artworkURL)
+    }
+    return .playing(artworkURL: friend.artworkURL)
+  }
+
+  private func tuneInToFriend(_ friend: PresencePayload) {
+    let state = peerState(for: friend)
+    guard case .playing = state else { return }
+    guard !tuneInBusy else { return }
+
+    tuneInBusy = true
+    tuneInMessage = nil
+    Task {
+      let result = await TuneInService.tuneIn(
+        peerTitle: friend.title,
+        peerArtist: friend.artist
+      )
+      tuneInMessage = result
+      tuneInBusy = false
+      if result == nil {
+        tunedInPeerId = friend.userId
+      }
+    }
+  }
+
+  private var panelTint: Color {
+    if colorScheme == .dark {
+      return Color(red: 0.18, green: 0.40, blue: 0.56).opacity(0.52)
+    }
+    return Color(red: 0.39, green: 0.71, blue: 0.92).opacity(0.48)
   }
 }
 
-// MARK: - Track Row
+// MARK: - Now Playing Row
 
-struct TrackRow: View {
+struct NowPlayingRow: View {
   let title: String
   let artist: String
   let artworkURL: String
-  let onTap: () -> Void
 
   var body: some View {
-    HStack(spacing: 10) {
+    HStack(spacing: 14) {
       Group {
         if let url = URL(string: artworkURL), !artworkURL.isEmpty {
           AsyncImage(url: url) { image in
@@ -303,22 +307,65 @@ struct TrackRow: View {
           artworkPlaceholder
         }
       }
-      .frame(width: 44, height: 44)
-      .clipShape(RoundedRectangle(cornerRadius: 4))
+      .frame(width: 48, height: 48)
+      .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-      VStack(alignment: .leading, spacing: 2) {
+      VStack(alignment: .leading, spacing: 4) {
         Text(title)
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundStyle(.primary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.75)
         Text(artist)
+          .font(.system(size: 12, weight: .regular))
           .foregroundStyle(.secondary)
+          .lineLimit(1)
       }
+      Spacer()
     }
-    .contentShape(Rectangle())
-    .onTapGesture(perform: onTap)
-    .help("Click to tune in")
   }
 
   private var artworkPlaceholder: some View {
-    RoundedRectangle(cornerRadius: 4)
-      .fill(Color.secondary.opacity(0.2))
+    RoundedRectangle(cornerRadius: 12, style: .continuous)
+      .fill(Color.primary.opacity(0.12))
+      .overlay(
+        Image(systemName: "music.note")
+          .foregroundStyle(.secondary)
+      )
+  }
+}
+
+struct EmptyFriendsState: View {
+  var body: some View {
+    VStack(spacing: 8) {
+      Image(systemName: "person.3.sequence")
+        .font(.system(size: 18, weight: .regular))
+        .foregroundStyle(.secondary)
+      Text("No one is online right now")
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
+  }
+}
+
+// MARK: - macOS Blur
+
+struct VisualEffectBlur: NSViewRepresentable {
+  var material: NSVisualEffectView.Material
+  var blendingMode: NSVisualEffectView.BlendingMode
+
+  func makeNSView(context: Context) -> NSVisualEffectView {
+    let view = NSVisualEffectView()
+    view.material = material
+    view.blendingMode = blendingMode
+    view.state = .active
+    return view
+  }
+
+  func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+    nsView.material = material
+    nsView.blendingMode = blendingMode
+    nsView.state = .active
   }
 }

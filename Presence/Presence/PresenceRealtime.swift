@@ -19,6 +19,7 @@ final class PresenceRealtime {
 
   private let profile: UserProfile
 
+  var isStreamingEnabled: Bool = true
   var connectionState: String = "Starting…"
   var peerDisplayName: String = ""
   var peerImessageContact: String = ""
@@ -26,6 +27,7 @@ final class PresenceRealtime {
   var peerArtist: String = ""
   var peerArtworkURL: String = ""
   var peerOnline: Bool = false
+  var friends: [PresencePayload] = []
   var lastError: String?
 
   init(profile: UserProfile) {
@@ -33,6 +35,10 @@ final class PresenceRealtime {
   }
 
   func start() async {
+    guard isStreamingEnabled else {
+      connectionState = "Paused"
+      return
+    }
     guard !subscribed else { return }
     guard let (url, anonKey) = SupabaseConfig.resolve() else {
       connectionState = "Needs config"
@@ -90,7 +96,7 @@ final class PresenceRealtime {
     heartbeatTask = Task {
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(25))
-        guard !Task.isCancelled, subscribed, let ch = channel else { continue }
+        guard !Task.isCancelled, isStreamingEnabled, subscribed, let ch = channel else { continue }
         try? await ch.track(makePayload())
       }
     }
@@ -109,6 +115,7 @@ final class PresenceRealtime {
   }
 
   private func applyPresenceDiff(_ action: any PresenceAction) {
+    guard isStreamingEnabled else { return }
     for (key, presence) in action.joins {
       if let decoded = try? presence.decodeState(as: PresencePayload.self) {
         presenceMap[key] = decoded
@@ -121,7 +128,10 @@ final class PresenceRealtime {
   }
 
   private func pickPeer() {
-    let others = presenceMap.values.filter { $0.userId != localUserId && !$0.userId.isEmpty }
+    let others = presenceMap.values
+      .filter { $0.userId != localUserId && !$0.userId.isEmpty }
+      .sorted(by: { $0.updatedAt > $1.updatedAt })
+    friends = others
     guard let peer = others.first else {
       peerOnline = false
       peerDisplayName = ""
@@ -143,11 +153,31 @@ final class PresenceRealtime {
     currentTitle = title
     currentArtist = artist
     currentArtworkURL = artworkURL
-    guard subscribed, let ch = channel else { return }
+    guard isStreamingEnabled, subscribed, let ch = channel else { return }
     do {
       try await ch.track(makePayload())
     } catch {
       lastError = String(describing: error)
     }
+  }
+
+  func setStreamingEnabled(_ enabled: Bool) async {
+    guard enabled != isStreamingEnabled else { return }
+    isStreamingEnabled = enabled
+    if enabled {
+      connectionState = subscribed ? "Connected" : "Reconnecting…"
+      await start()
+      return
+    }
+
+    connectionState = "Paused"
+    heartbeatTask?.cancel()
+    friends = []
+    peerOnline = false
+    peerDisplayName = ""
+    peerImessageContact = ""
+    peerTitle = ""
+    peerArtist = ""
+    peerArtworkURL = ""
   }
 }
