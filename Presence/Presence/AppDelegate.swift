@@ -15,6 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     nowPlaying.onTrackChanged = { [weak self] title, artist, artworkURL in
       Task { await self?.presenceRealtime.updateLocalTrack(title: title, artist: artist, artworkURL: artworkURL) }
     }
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      // Hardened Runtime blocks Apple Events without `com.apple.security.automation.apple-events`; priming registers the app in Privacy → Automation.
+      MusicNowPlayingScript.primeAutomationAccess()
+      self.nowPlaying.refreshFromSystem()
+      self.nowPlaying.scheduleCatchUpRefreshAttempts()
+    }
     observeProfileCompletion()
     if profile.isComplete {
       Task { await presenceRealtime.start() }
@@ -89,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       let view = ContentView(nowPlaying: nowPlaying, realtime: presenceRealtime, profile: profile)
       let host = NSHostingController<ContentView>(rootView: view)
       let p = NSPanel(
-        contentRect: NSRect(x: 0, y: 0, width: 320, height: 440),
+        contentRect: NSRect(x: 0, y: 0, width: 380, height: 420),
         styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
         backing: .buffered,
         defer: false
@@ -100,6 +107,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       p.isMovable = false
       p.hidesOnDeactivate = false
       p.hasShadow = true
+      p.isOpaque = false
+      p.backgroundColor = .clear
       p.contentViewController = host
       panel = p
     }
@@ -109,6 +118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let x = buttonRect.midX - panelSize.width / 2
     let y = buttonRect.minY - panelSize.height - 4
     panel.setFrameOrigin(NSPoint(x: x, y: y))
+    nowPlaying.refreshFromSystem()
+    nowPlaying.scheduleCatchUpRefreshAttempts()
     panel.orderFrontRegardless()
   }
 }

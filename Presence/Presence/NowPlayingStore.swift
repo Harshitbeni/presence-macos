@@ -10,6 +10,8 @@ final class NowPlayingStore {
   var onTrackChanged: ((String, String, String) -> Void)?
 
   nonisolated(unsafe) private var observer: NSObjectProtocol?
+  /// Only touched from the main queue; `nonisolated(unsafe)` so `deinit` can cancel pending work.
+  nonisolated(unsafe) private var catchUpWorkItems: [DispatchWorkItem] = []
 
   init() {
     // Subscribe to Apple Music track-change notifications (no polling needed)
@@ -20,18 +22,62 @@ final class NowPlayingStore {
     ) { [weak self] note in
       Task { @MainActor in self?.handleMusicNotification(note) }
     }
+  }
 
-    // One-shot read for the case where music is already playing at launch
-    if let current = MusicNowPlayingScript.currentPlaying() {
-      title = current.title
-      artist = current.artist
-      Task {
-        artworkURL = await Self.fetchArtworkURL(title: current.title, artist: current.artist)
+  /// Syncs from `MPNowPlayingInfoCenter`, then AppleScript if needed. Call after launch and when opening the panel.
+  func refreshFromSystem() {
+    let newTitle: String
+    let newArtist: String
+    let newPaused: Bool
+    if let system = SystemNowPlayingReader.read() {
+      newTitle = system.title
+      newArtist = system.artist
+      newPaused = system.isPaused
+    } else if let script = MusicNowPlayingScript.currentPlaying() {
+      newTitle = script.title
+      newArtist = script.artist
+      newPaused = script.isPaused
+    } else {
+      return
+    }
+
+    let trackChanged = newTitle != title || newArtist != artist
+    let pauseChanged = newPaused != isPaused
+
+    if trackChanged {
+      title = newTitle
+      artist = newArtist
+      isPaused = newPaused
+      artworkURL = ""
+      onTrackChanged?(newTitle, newArtist, "")
+      if newTitle != "—" {
+        Task {
+          let url = await Self.fetchArtworkURL(title: newTitle, artist: newArtist)
+          artworkURL = url
+          onTrackChanged?(newTitle, newArtist, url)
+        }
       }
+    } else if pauseChanged {
+      isPaused = newPaused
+    }
+  }
+
+  /// Several delayed refreshes — `MPNowPlayingInfoCenter` and Music scripting often lag right after launch.
+  func scheduleCatchUpRefreshAttempts() {
+    catchUpWorkItems.forEach { $0.cancel() }
+    catchUpWorkItems.removeAll()
+    let delays: [TimeInterval] = [0.25, 0.75, 1.5, 3, 6, 10]
+    for delay in delays {
+      let work = DispatchWorkItem { [weak self] in
+        self?.refreshFromSystem()
+      }
+      catchUpWorkItems.append(work)
+      DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
   }
 
   deinit {
+    catchUpWorkItems.forEach { $0.cancel() }
     if let observer {
       DistributedNotificationCenter.default().removeObserver(observer)
     }
