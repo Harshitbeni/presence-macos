@@ -140,7 +140,6 @@ struct PeerAvatarView: View {
 // MARK: - Content View
 
 struct ContentView: View {
-  @Environment(\.colorScheme) private var colorScheme
   @Bindable var nowPlaying: NowPlayingStore
   @Bindable var realtime: PresenceRealtime
   @Bindable var profile: UserProfile
@@ -154,8 +153,6 @@ struct ContentView: View {
     ZStack {
       VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-      RoundedRectangle(cornerRadius: 24, style: .continuous)
-        .fill(panelTint)
 
       VStack(alignment: .leading, spacing: 18) {
         header
@@ -219,7 +216,7 @@ struct ContentView: View {
   private var header: some View {
     HStack {
       Text("Beta Testers")
-        .font(.system(size: 12, weight: .semibold))
+        .font(.system(size: 12, weight: .medium))
         .foregroundStyle(.primary)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -278,13 +275,6 @@ struct ContentView: View {
       }
     }
   }
-
-  private var panelTint: Color {
-    if colorScheme == .dark {
-      return Color(red: 0.18, green: 0.40, blue: 0.56).opacity(0.52)
-    }
-    return Color(red: 0.39, green: 0.71, blue: 0.92).opacity(0.48)
-  }
 }
 
 // MARK: - Now Playing Row
@@ -337,15 +327,10 @@ struct NowPlayingRow: View {
 
 struct EmptyFriendsState: View {
   var body: some View {
-    VStack(spacing: 8) {
-      Image(systemName: "person.3.sequence")
-        .font(.system(size: 18, weight: .regular))
-        .foregroundStyle(.secondary)
-      Text("No one is online right now")
-        .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(.secondary)
-    }
-    .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
+    Text("No one is online")
+      .font(.system(size: 12, weight: .medium))
+      .foregroundStyle(.secondary)
+      .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
   }
 }
 
