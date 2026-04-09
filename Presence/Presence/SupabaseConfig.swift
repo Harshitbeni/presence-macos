@@ -1,8 +1,18 @@
 import Foundation
 
 enum SupabaseConfig {
-  /// Resolves credentials from: (1) process environment, (2) `Secrets.plist` in the bundle, (3) Application Support `Presence/Supabase.plist`.
+  // ─── Fill these in ────────────────────────────────────────────────────────
+  // Find both values at: supabase.com → your project → Settings → API
+  // The anon key is safe to embed — it's a public key (like a Stripe publishable key).
+  private static let hardcodedURL     = "https://sveuaztjopdwhdwsuyld.supabase.co"
+  private static let hardcodedAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN2ZXVhenRqb3Bkd2hkd3N1eWxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjEzNjIsImV4cCI6MjA5MDczNzM2Mn0.8LPPRu7JJcdNbulefldVzqFUgdBHbxGiZhkRsAUejgs"
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /// Resolves credentials from: (1) hardcoded values, (2) process environment, (3) `Secrets.plist` in the bundle, (4) Application Support `Presence/Supabase.plist`.
   static func resolve() -> (url: URL, anonKey: String)? {
+    if let pair = parse(urlString: hardcodedURL, key: hardcodedAnonKey) {
+      return pair
+    }
     let env = ProcessInfo.processInfo.environment
     if let pair = parse(urlString: env["SUPABASE_URL"], key: env["SUPABASE_ANON_KEY"]) {
       return pair

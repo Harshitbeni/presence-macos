@@ -10,17 +10,30 @@ final class PresenceRealtime {
   private var localUserId: String = ""
   private var presenceMap: [String: PresencePayload] = [:]
   private var subscribed = false
+  private var heartbeatTask: Task<Void, Never>?
+
+  // Latest local track — kept so the heartbeat can re-broadcast current state.
+  private var currentTitle: String = "—"
+  private var currentArtist: String = "—"
+  private var currentArtworkURL: String = ""
+
+  private let profile: UserProfile
 
   var connectionState: String = "Starting…"
+  var peerDisplayName: String = ""
+  var peerImessageContact: String = ""
   var peerTitle: String = ""
   var peerArtist: String = ""
   var peerArtworkURL: String = ""
   var peerOnline: Bool = false
   var lastError: String?
 
-  init() {}
+  init(profile: UserProfile) {
+    self.profile = profile
+  }
 
   func start() async {
+    guard !subscribed else { return }
     guard let (url, anonKey) = SupabaseConfig.resolve() else {
       connectionState = "Needs config"
       lastError = SupabaseConfig.configurationHint
@@ -55,14 +68,8 @@ final class PresenceRealtime {
       subscribed = true
       connectionState = "Connected"
 
-      let initial = PresencePayload(
-        userId: localUserId,
-        title: "—",
-        artist: "—",
-        artworkURL: "",
-        updatedAt: Int64(Date().timeIntervalSince1970 * 1000)
-      )
-      try await ch.track(initial)
+      try await ch.track(makePayload())
+      startHeartbeat()
     } catch {
       subscribed = false
       connectionState = "Error"
@@ -74,6 +81,31 @@ final class PresenceRealtime {
         lastError = text
       }
     }
+  }
+
+  // Re-tracks presence every 25 seconds so peers don't lose you if the
+  // Realtime connection drops and silently reconnects.
+  private func startHeartbeat() {
+    heartbeatTask?.cancel()
+    heartbeatTask = Task {
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(25))
+        guard !Task.isCancelled, subscribed, let ch = channel else { continue }
+        try? await ch.track(makePayload())
+      }
+    }
+  }
+
+  private func makePayload() -> PresencePayload {
+    PresencePayload(
+      userId: localUserId,
+      displayName: profile.displayName,
+      imessageContact: profile.imessageContact,
+      title: currentTitle,
+      artist: currentArtist,
+      artworkURL: currentArtworkURL,
+      updatedAt: Int64(Date().timeIntervalSince1970 * 1000)
+    )
   }
 
   private func applyPresenceDiff(_ action: any PresenceAction) {
@@ -92,28 +124,28 @@ final class PresenceRealtime {
     let others = presenceMap.values.filter { $0.userId != localUserId && !$0.userId.isEmpty }
     guard let peer = others.first else {
       peerOnline = false
+      peerDisplayName = ""
+      peerImessageContact = ""
       peerTitle = ""
       peerArtist = ""
       peerArtworkURL = ""
       return
     }
     peerOnline = true
+    peerDisplayName = peer.displayName
+    peerImessageContact = peer.imessageContact
     peerTitle = peer.title
     peerArtist = peer.artist
     peerArtworkURL = peer.artworkURL
   }
 
   func updateLocalTrack(title: String, artist: String, artworkURL: String) async {
+    currentTitle = title
+    currentArtist = artist
+    currentArtworkURL = artworkURL
     guard subscribed, let ch = channel else { return }
-    let payload = PresencePayload(
-      userId: localUserId,
-      title: title,
-      artist: artist,
-      artworkURL: artworkURL,
-      updatedAt: Int64(Date().timeIntervalSince1970 * 1000)
-    )
     do {
-      try await ch.track(payload)
+      try await ch.track(makePayload())
     } catch {
       lastError = String(describing: error)
     }

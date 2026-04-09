@@ -4,12 +4,14 @@ import SwiftUI
 struct ContentView: View {
   @Bindable var nowPlaying: NowPlayingStore
   @Bindable var realtime: PresenceRealtime
+  @Bindable var profile: UserProfile
   @State private var tuneInMessage: String?
   @State private var tuneInBusy = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Local")
+      // — Your track —
+      Text(profile.displayName)
         .font(.headline)
       TrackRow(
         title: nowPlaying.title,
@@ -30,9 +32,26 @@ struct ContentView: View {
 
       Divider()
 
-      Text("Remote")
-        .font(.headline)
+      // — Peer's track —
       if realtime.peerOnline {
+        HStack(alignment: .firstTextBaseline) {
+          Text(realtime.peerDisplayName.isEmpty ? "Friend" : realtime.peerDisplayName)
+            .font(.headline)
+          Spacer()
+          if !realtime.peerImessageContact.isEmpty {
+            Button {
+              if let url = URL(string: "imessage:\(realtime.peerImessageContact)") {
+                NSWorkspace.shared.open(url)
+              }
+            } label: {
+              Label(realtime.peerImessageContact, systemImage: "message.fill")
+                .font(.caption)
+                .lineLimit(1)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.blue)
+          }
+        }
         TrackRow(
           title: realtime.peerTitle.isEmpty ? "—" : realtime.peerTitle,
           artist: realtime.peerArtist.isEmpty ? "—" : realtime.peerArtist,
@@ -50,7 +69,9 @@ struct ContentView: View {
           }
         }
       } else {
-        Text("No peer")
+        Text("Remote")
+          .font(.headline)
+        Text("No peer online")
           .foregroundStyle(.secondary)
       }
 
