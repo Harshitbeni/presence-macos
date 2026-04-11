@@ -3,7 +3,7 @@ import MediaPlayer
 
 /// Reads system-wide now-playing metadata (Music, Spotify, etc.) from `MPNowPlayingInfoCenter`.
 enum SystemNowPlayingReader {
-  static func read() -> (title: String, artist: String, isPaused: Bool)? {
+  static func read() -> (title: String, artist: String, isPaused: Bool, trackID: String)? {
     guard let info = MPNowPlayingInfoCenter.default().nowPlayingInfo else { return nil }
 
     var rawTitle = (info[MPMediaItemPropertyTitle] as? String)?
@@ -27,7 +27,8 @@ enum SystemNowPlayingReader {
     return (
       rawTitle.isEmpty ? "—" : rawTitle,
       rawArtist.isEmpty ? "—" : rawArtist,
-      isPaused
+      isPaused,
+      trackID(from: info)
     )
   }
 
@@ -35,5 +36,18 @@ enum SystemNowPlayingReader {
     if let d = info[MPNowPlayingInfoPropertyPlaybackRate] as? Double { return d }
     if let n = info[MPNowPlayingInfoPropertyPlaybackRate] as? NSNumber { return n.doubleValue }
     return 0
+  }
+
+  private static func trackID(from info: [String: Any]) -> String {
+    if let storeID = info[MPMediaItemPropertyPlaybackStoreID] as? String {
+      return storeID.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    if let persistent = info[MPMediaItemPropertyPersistentID] as? NSNumber {
+      return persistent.stringValue
+    }
+    if let persistentUInt64 = info[MPMediaItemPropertyPersistentID] as? UInt64 {
+      return String(persistentUInt64)
+    }
+    return ""
   }
 }

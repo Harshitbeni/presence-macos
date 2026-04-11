@@ -17,7 +17,7 @@ enum MusicNowPlayingScript {
 
   /// Reads the current track whenever Music is not stopped (playing, paused, scrubbing, etc.).
   /// Avoids `player state is not playing` — streaming often reports odd states while audio is active.
-  static func currentPlaying() -> (title: String, artist: String, isPaused: Bool)? {
+  static func currentPlaying() -> (title: String, artist: String, isPaused: Bool, trackID: String)? {
     let source = """
     set sep to ASCII character 31
     tell application "Music"
@@ -28,7 +28,11 @@ enum MusicNowPlayingScript {
         set ta to artist of current track as text
         set pausedBit to "0"
         if player state is paused then set pausedBit to "1"
-        return tn & sep & ta & sep & pausedBit
+        set tid to ""
+        try
+          set tid to (id of current track) as text
+        end try
+        return tn & sep & ta & sep & pausedBit & sep & tid
       on error
         return ""
       end try
@@ -48,13 +52,15 @@ enum MusicNowPlayingScript {
     let title = String(parts[0])
     let artist = String(parts[1])
     let pausedBit = parts.count > 2 ? String(parts[2]).trimmingCharacters(in: .whitespacesAndNewlines) : "0"
+    let trackID = parts.count > 3 ? String(parts[3]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
     let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
     let a = artist.trimmingCharacters(in: .whitespacesAndNewlines)
     if t.isEmpty && a.isEmpty { return nil }
     return (
       t.isEmpty ? "—" : t,
       a.isEmpty ? "—" : a,
-      pausedBit == "1"
+      pausedBit == "1",
+      trackID
     )
   }
 }
