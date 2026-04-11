@@ -7,30 +7,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var signUpWindow: NSWindow?
   private let profile = UserProfile()
   private let nowPlaying = NowPlayingStore()
-  private lazy var presenceRealtime = PresenceRealtime(profile: profile)
+  private lazy var presenceSync = PresenceSync(profile: profile)
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
     setupStatusItem()
-    nowPlaying.onTrackChanged = { [weak self] title, artist, artworkURL in
-      Task { await self?.presenceRealtime.updateLocalTrack(title: title, artist: artist, artworkURL: artworkURL) }
+    nowPlaying.onTrackChanged = { [weak self] title, artist, artworkURL, trackID in
+      Task {
+        await self?.presenceSync.updateLocalTrack(
+          title: title,
+          artist: artist,
+          artworkURL: artworkURL,
+          trackID: trackID
+        )
+      }
     }
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
-      // Hardened Runtime blocks Apple Events without `com.apple.security.automation.apple-events`; priming registers the app in Privacy → Automation.
-      MusicNowPlayingScript.primeAutomationAccess()
       self.nowPlaying.refreshFromSystem()
       self.nowPlaying.scheduleCatchUpRefreshAttempts()
     }
     observeProfileCompletion()
     if profile.isComplete {
-      Task { await presenceRealtime.start() }
+      Task { await presenceSync.start() }
     } else {
       showSignUpWindow()
     }
   }
 
-  // Sign-up uses a real NSWindow so text fields get proper keyboard focus.
   private func showSignUpWindow() {
     guard signUpWindow == nil else { return }
     let view = SignInView(profile: profile)
@@ -52,8 +56,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     NSApp.activate(ignoringOtherApps: true)
   }
 
-  // Watches profile.isComplete; when sign-up finishes, closes the sign-up window
-  // and opens the music panel. One-shot — re-subscribes only if profile is cleared.
   private func observeProfileCompletion() {
     withObservationTracking {
       _ = profile.isComplete
@@ -63,10 +65,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if self.profile.isComplete {
           self.signUpWindow?.close()
           self.signUpWindow = nil
-          Task { await self.presenceRealtime.start() }
+          Task { await self.presenceSync.start() }
           self.togglePanel()
         } else {
-          // Profile was cleared (e.g. reset) — show sign-up again.
           self.panel?.orderOut(nil)
           self.panel = nil
           self.showSignUpWindow()
@@ -93,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return
     }
     if panel == nil {
-      let view = ContentView(nowPlaying: nowPlaying, realtime: presenceRealtime, profile: profile)
+      let view = ContentView(nowPlaying: nowPlaying, sync: presenceSync, profile: profile)
       let host = NSHostingController<ContentView>(rootView: view)
       let p = NSPanel(
         contentRect: NSRect(x: 0, y: 0, width: 380, height: 420),

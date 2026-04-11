@@ -58,7 +58,6 @@ struct PeerAvatarView: View {
 
   var body: some View {
     ZStack {
-      // Avatar circle
       Circle()
         .fill(avatarColor(for: name))
         .frame(width: avatarSize, height: avatarSize)
@@ -70,7 +69,6 @@ struct PeerAvatarView: View {
     .grayscale(state == .offline ? 1.0 : 0.0)
     .opacity(state == .offline ? 0.6 : 1.0)
     .animation(.easeInOut(duration: 0.3), value: state == .offline)
-    // Solid and dashed ring treatments for active friend states.
     .overlay {
       if case .playing = state {
         Circle()
@@ -84,11 +82,9 @@ struct PeerAvatarView: View {
           .frame(width: avatarSize + 12, height: avatarSize + 12)
       }
     }
-    // Badge in bottom-right corner
     .overlay(alignment: .bottomTrailing) {
       badgeView
     }
-    // Extra padding so the badge has room to overflow
     .padding(.bottom, 6)
     .padding(.trailing, 6)
   }
@@ -141,7 +137,7 @@ struct PeerAvatarView: View {
 
 struct ContentView: View {
   @Bindable var nowPlaying: NowPlayingStore
-  @Bindable var realtime: PresenceRealtime
+  @Bindable var sync: PresenceSync
   @Bindable var profile: UserProfile
   @State private var tuneInMessage: String?
   @State private var tuneInBusy = false
@@ -157,13 +153,13 @@ struct ContentView: View {
       VStack(alignment: .leading, spacing: 18) {
         header
 
-        if realtime.isStreamingEnabled {
+        if sync.isStreamingEnabled {
           Group {
-            if realtime.friends.isEmpty {
+            if sync.friends.isEmpty {
               EmptyFriendsState()
             } else {
               LazyVGrid(columns: friendColumns, alignment: .leading, spacing: 14) {
-                ForEach(realtime.friends, id: \.userId) { friend in
+                ForEach(sync.friends) { friend in
                   PeerAvatarView(name: displayName(for: friend), state: peerState(for: friend))
                     .help(displayName(for: friend))
                     .onTapGesture {
@@ -205,8 +201,8 @@ struct ContentView: View {
       RoundedRectangle(cornerRadius: 24, style: .continuous)
         .strokeBorder(Color.primary.opacity(0.2), lineWidth: 1)
     )
-    .animation(.easeInOut(duration: 0.2), value: realtime.isStreamingEnabled)
-    .onChange(of: realtime.friends.map(\.userId)) { _, ids in
+    .animation(.easeInOut(duration: 0.2), value: sync.isStreamingEnabled)
+    .onChange(of: sync.friends.map(\.id)) { _, ids in
       if let tunedInPeerId, !ids.contains(tunedInPeerId) {
         self.tunedInPeerId = nil
       }
@@ -236,9 +232,9 @@ struct ContentView: View {
 
   private var streamingBinding: Binding<Bool> {
     Binding(
-      get: { realtime.isStreamingEnabled },
+      get: { sync.isStreamingEnabled },
       set: { enabled in
-        Task { await realtime.setStreamingEnabled(enabled) }
+        Task { await sync.setStreamingEnabled(enabled) }
       }
     )
   }
@@ -250,7 +246,7 @@ struct ContentView: View {
   private func peerState(for friend: PresencePayload) -> PeerState {
     let hasTrack = !friend.title.trimmingCharacters(in: .whitespaces).isEmpty && friend.title != "—"
     if !hasTrack { return .online }
-    if tunedInPeerId == friend.userId {
+    if tunedInPeerId == friend.id {
       return .connected(artworkURL: friend.artworkURL)
     }
     return .playing(artworkURL: friend.artworkURL)
@@ -266,12 +262,13 @@ struct ContentView: View {
     Task {
       let result = await TuneInService.tuneIn(
         peerTitle: friend.title,
-        peerArtist: friend.artist
+        peerArtist: friend.artist,
+        peerTrackID: friend.trackID
       )
       tuneInMessage = result
       tuneInBusy = false
       if result == nil {
-        tunedInPeerId = friend.userId
+        tunedInPeerId = friend.id
       }
     }
   }
